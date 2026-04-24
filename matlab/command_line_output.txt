@@ -1,0 +1,74 @@
+=================================================
+  BEAMFORMER SIMULATION RESULTS
+=================================================
+  Array         : M = 8 elements, d/lambda = 0.5
+  Target angle  : 30.0 deg
+  Interferer    : -20.0 deg
+  Input SNR     : 10.0 dB
+  Input SIR     : 0.0 dB
+--------------------------------------------------
+  Array gain (signal)     : +9.03 dB
+  Array gain (interferer) : -9.53 dB
+--------------------------------------------------
+  Input  SINR   : -2.55 dB
+  Output SINR   : 15.78 dB
+  SINR improvement : 18.33 dB
+=================================================
+
+=================================================
+  PHASE 1.2 — FIXED-POINT ANALYSIS
+=================================================
+
+  Input peak           : 3.5686  ->  scaled to 1.0000
+  Scale factor         : 0.280218  (-11.05 dB)
+
+--- Radiation pattern (WL_w = 16 bit) ---------------
+  Max pattern deviation : 0.0000 dB  (tolerance < 0.5 dB)
+  Null depth deviation  : 0.0000 dB  (tolerance < 5.0 dB)
+  3 dB BW  float        : 14.800 deg
+  3 dB BW  fixed        : 14.800 deg
+  BW deviation          : 0.0000 deg
+
+--- Beamformer output --------------------------------
+  SQNR                  : 33.51 dB
+  Output SINR (float)   : 15.78 dB
+  Output SINR (fixed)   : 15.78 dB
+  SINR degradation      : 0.00 dB
+
+--- Word-length sweep --------------------------------
+  WL | Peak dev (dB) | Null dev (dB) | BW dev (deg)
+  ---|---------------|---------------|-------------
+   6 |        0.0000 |        0.0000 |       0.0000
+   8 |        0.0000 |        0.0000 |       0.0000
+  10 |        0.0000 |        0.0000 |       0.0000
+  12 |        0.0000 |        0.0000 |       0.0000
+  14 |        0.0000 |        0.0000 |       0.0000
+  16 |        0.0000 |        0.0000 |       0.0000  <- selected
+  18 |        0.0000 |        0.0000 |       0.0000
+  20 |        0.0000 |        0.0000 |       0.0000
+  22 |        0.0000 |        0.0000 |       0.0000
+  24 |        0.0000 |        0.0000 |       0.0000
+
+  Vectors written to ../vectors/
+    weights.hex         : 16 lines (8 complex weights)
+    inputs.hex          : 8192 lines (8 ant x 512 samp x 2)
+    expected_output.hex : 1024 lines (512 complex samples)
+
+=================================================
+  PHASE 1.2 SUMMARY — LOCKED-IN WORD LENGTHS
+=================================================
+  Signal                    WL    FL  Format
+  ------                    --    --  ------
+  Input samples             16    15  Q0.15
+  Weights                   16    15  Q0.15
+  Multiplier output         32    30  Q1.30
+  Accumulator               36    31  Q4.31
+  Beamformer output         16    14  Q1.14
+  -------------------------------------------------
+  Input scale factor    : 0.280218
+  Max pattern deviation : 0.0000 dB  (< 0.5 dB target)
+  Null depth deviation  : 0.0000 dB  (< 5.0 dB target)
+  3 dB BW deviation     : 0.0000 deg
+  Output SQNR           : 33.51 dB
+  SINR degradation      : 0.00 dB
+=================================================

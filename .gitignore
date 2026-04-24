@@ -1,0 +1,24 @@
+# MATLAB
+*.asv
+*.mex*
+slprj/
+
+# Vivado build artifacts
+vivado/
+*.jou
+*.log
+*.str
+*.dcp
+*.bit
+*.ltx
+.Xil/
+
+# iverilog simulation
+*.vcd
+beamformer_sim
+
+# LaTeX
+project_update.aux
+project_update.log
+project_update.out
+project_update.tex
