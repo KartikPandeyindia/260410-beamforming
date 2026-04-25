@@ -1,4 +1,13 @@
-# FPGA-Based Adaptive Beamformer for 5G Networks — Design Documentation
+# FPGA-Based Adaptive Beamformer for 5G Networks — Design Documentation v2.0
+
+## Revision history
+
+| Version | Date | Change |
+|---------|------|--------|
+| 1.0 | Phase 1.1 complete | Initial version. |
+| 2.0 | Phase 1 complete | Phase 1 all sub-stages complete. Phase 1.5 accurately scoped as synthesis-only (timing closure deferred). Phase 2 restructured as MATLAB-only algorithmic feasibility study (LMS vs RLS). Rationale in §4 and §6. |
+
+---
 
 ## 1. Document purpose and audience
 
@@ -8,329 +17,291 @@ AI agents reading this document should treat it as project ground truth. If an i
 
 ## 2. Project overview
 
-The project implements a beamforming receiver for a 5G New Radio (NR) base station on a field-programmable gate array (FPGA). Beamforming is a spatial signal processing technique in which multiple antenna elements are combined with complex weights to produce a directional reception pattern. The goal is to amplify signals arriving from a target user direction while suppressing signals and noise arriving from other directions.
+The project implements a beamforming receiver for a 5G New Radio (NR) base station targeting an FPGA platform. Beamforming is a spatial signal processing technique in which multiple antenna elements are combined with complex weights to produce a directional reception pattern — amplifying signals from a target direction while suppressing interference from other directions.
 
-The project is divided into two phases. Phase 1 implements a non-adaptive beamformer in which the weights are fixed at synthesis time for a known target direction. Phase 2 extends this into an adaptive beamformer that uses the Least Mean Squares (LMS) algorithm to automatically update the weights in response to channel conditions, with no prior knowledge of the target direction required at runtime.
-
-The project emphasises a top-down, simulation-first workflow. Every hardware decision is validated first in software (MATLAB) before being committed to RTL. Every RTL block is verified against a golden reference generated from the same MATLAB simulation. This methodology ensures that bugs are caught at the cheapest stage possible and that the hardware faithfully implements the mathematically validated algorithm.
+The project is divided into two phases. Phase 1 implements a non-adaptive beamformer with fixed weights, verified in simulation and partially synthesised on an Artix-7 FPGA. Phase 2 is an algorithmic feasibility study comparing the LMS and RLS adaptive beamforming algorithms in MATLAB, producing a recommendation for which algorithm is best suited for a future full hardware implementation.
 
 ## 3. Background on beamforming in 5G
 
-Modern 5G base stations (gNBs) use multiple antennas — sometimes many tens or hundreds — to serve multiple users simultaneously within the same time-frequency resources. Each antenna receives a superposition of the target user's signal, signals from other users (multi-user interference), signals from adjacent cells (inter-cell interference), and thermal noise. Without spatial processing, it is impossible to separate these contributions.
+Modern 5G base stations (gNBs) use multiple antennas to serve multiple users simultaneously within the same time-frequency resources. Each antenna receives a superposition of the target user's signal, multi-user interference, inter-cell interference, and thermal noise. Beamforming treats the antenna array as a spatial filter — a plane wave arriving from a specific angle produces a characteristic phase progression across array elements, and by multiplying each element's signal by a complex weight and summing, the receiver can make the target signal add constructively while interference partially cancels.
 
-Beamforming solves this problem by treating the antenna array as a spatial filter. A plane wave arriving from a specific angle produces a characteristic phase progression across the array elements — the signal reaches each antenna at a slightly different time, which translates to a fixed phase offset between adjacent elements. By multiplying each antenna's signal by a complex weight and summing the results, the receiver can make signals from a particular direction add constructively while signals from other directions partially cancel. The vector of complex weights is called the beamforming vector, and the angle at which constructive combining occurs is called the steering direction.
-
-In 5G NR specifically, beamforming is essential at sub-6 GHz bands to improve spectral efficiency through spatial multiplexing, and it is absolutely required at millimetre-wave bands where propagation losses are severe and narrow beams are needed to close the link budget. 5G uses demodulation reference signals (DMRS) embedded in each slot to allow the base station to estimate the channel and compute or update beamforming weights. The pilot-and-data structure of 5G makes LMS-style adaptive beamforming a natural fit, because the pilot symbols provide the reference signal that LMS requires.
+In 5G NR, beamforming is essential at sub-6 GHz for spatial multiplexing and mandatory at millimetre-wave bands where narrow beams are required to close the link budget. The DMRS pilot structure of 5G makes adaptive beamforming natural — pilots provide the reference signal that LMS and RLS algorithms require for weight convergence.
 
 ## 4. Two-phase project structure
 
-The project is organised into two distinct phases, each with five sub-stages. This structure ensures that a working, verified design exists at the end of Phase 1 before any adaptive logic is introduced.
+### Phase 1 — Non-Adaptive Beamformer (complete)
 
-Phase 1 builds a non-adaptive beamformer where weights are precomputed in MATLAB for a target angle, converted to fixed-point, and stored in a read-only memory (ROM) inside the FPGA. The hardware reads the weights from the ROM, multiplies each antenna sample by the corresponding weight, and sums the results to produce the beamformer output. The five sub-stages are:
+Phase 1 builds a verified RTL implementation of a conventional delay-and-sum beamformer with fixed weights stored in a ROM. The five sub-stages and their actual outcomes:
 
-- 1.1 Algorithm simulation in MATLAB (floating-point) — establish the golden reference.
-- 1.2 Fixed-point analysis in MATLAB — determine the minimum acceptable word lengths.
-- 1.3 RTL implementation in SystemVerilog — complex multiplier, accumulator, weight ROM, top-level wrapper.
-- 1.4 Co-simulation and verification — drive the RTL with test vectors from 1.1 and compare outputs.
-- 1.5 Synthesis and timing closure in Vivado — verify resource usage and clock frequency targets.
+- **1.1** MATLAB floating-point simulation — golden reference established. SINR improvement 18.33 dB. ✓
+- **1.2** MATLAB fixed-point analysis — word lengths locked. SQNR 33.51 dB, zero pattern degradation. ✓
+- **1.3** SystemVerilog RTL — five modules written and reviewed. ✓
+- **1.4** Functional co-simulation (iverilog) — 512/512 samples matched within ±1 LSB. ✓
+- **1.5** Vivado synthesis — DSP48 inference confirmed (16 DSP48E1, 3.90% LUT). Timing closure not completed (see §7.5). Partial ✓
 
-Phase 2 extends the Phase 1 hardware with an LMS weight-update engine, a pilot-signal controller, and a writeable weight register bank that replaces the ROM. The five sub-stages parallel Phase 1:
+Phase 1 deliverable: a functionally verified RTL design with confirmed synthesis resource mapping. Timing closure and bitstream generation are deferred — they are identified as future work, not silent gaps.
 
-- 2.1 LMS algorithm simulation in MATLAB — validate convergence behaviour.
-- 2.2 Fixed-point LMS analysis — check for overflow and weight drift in finite precision.
-- 2.3 HLS implementation of the LMS update in Vitis HLS.
-- 2.4 Co-simulation — verify weight convergence against the MATLAB reference.
-- 2.5 Integration and synthesis — integrate HLS-generated RTL with the Phase 1 data path, synthesize the full system, compare resources against Phase 1.
+### Phase 2 — Algorithmic Feasibility Study: LMS vs RLS (MATLAB only)
 
-This structure deliberately minimises the surface area of change between phases. The Phase 1 data path — complex multiplier, accumulator, pipeline — is reused unchanged in Phase 2. Only the weight storage is modified (ROM becomes register bank), and new blocks are added around the data path (error computation, LMS update, pilot controller). This keeps the Phase 1 verification work valid and reduces the risk that Phase 2 changes break a previously working design.
+Phase 2 is a MATLAB-only comparison of two adaptive beamforming algorithms. The original plan called for a full RTL and Vitis HLS implementation of the LMS engine. This was revised for the following reasons:
+
+1. **Toolchain constraints.** The development machine has insufficient disk space for Vitis HLS (~5 GB free, tool requires ~10 GB minimum). The lab PC has Vivado but is not accessible for iterative development work.
+
+2. **Project title interpretation.** The title "FPGA-Based Adaptive Beamformer for 5G NR" describes the design space, not a commitment to implement every algorithm in hardware. Phase 1 delivers the FPGA hardware contribution. Phase 2 delivers the adaptive algorithm analysis that would inform a future hardware implementation.
+
+3. **Academic value.** A rigorous LMS vs RLS comparison — convergence speed, steady-state SINR, sensitivity analysis, hardware complexity implications — is a self-contained and academically defensible contribution. It answers the question "which algorithm should go on the FPGA, and why?" which is the natural next question after Phase 1.
+
+Phase 2 sub-stages:
+
+- **2.1** LMS adaptive beamformer simulation (MATLAB)
+- **2.2** RLS adaptive beamformer simulation (MATLAB)
+- **2.3** Algorithm comparison: LMS vs RLS vs Phase 1 fixed-weight baseline
 
 ## 5. Design philosophy
 
-The single guiding principle of this project is to do the simplest correct thing in hardware and verify it exhaustively before adding complexity. Every design decision derives from this principle.
+**Simulation-first.** No RTL was written before the algorithm was validated in MATLAB. No word length was chosen before fixed-point simulation confirmed it. Phase 2 extends this principle — algorithm in MATLAB first, hardware later only when justified.
 
-Simulation-first. No RTL is written before the algorithm is validated in MATLAB floating-point, and no RTL word length is chosen before fixed-point simulation confirms the chosen precision gives acceptable results. Bugs found in MATLAB take minutes to fix; bugs found in simulation waveforms take hours; bugs found after synthesis take days. Pushing validation as early as possible is not optional.
+**Honest scoping.** Phase 1.5 produced a synthesis report, not a full implementation. This is stated clearly rather than overstated. The contribution is what it is: verified RTL and confirmed DSP mapping. Timing closure is future work.
 
-Golden reference throughout. Every level of the implementation is verified against the MATLAB golden reference. The fixed-point MATLAB output must match the floating-point output within acceptable quantisation error. The RTL simulation output must match the fixed-point MATLAB output exactly (within rounding). The synthesized hardware output, when driven with captured test vectors, must match the RTL simulation output. This chain of equivalence makes debugging tractable.
+**Golden reference throughout.** Fixed-point MATLAB was verified against floating-point MATLAB. RTL simulation was verified against fixed-point MATLAB exactly. Synthesis was verified against expected DSP count. Each level was checked before proceeding.
 
-Minimum viable hardware. The Phase 1 beamformer is the simplest working beamformer — a conventional delay-and-sum design with fixed weights. It is not the most spectrally efficient beamformer, it does not provide optimal interference suppression, and it is not what a production 5G base station would use. It is, however, the design that validates the data path most clearly. Better algorithms come in Phase 2 and in future extensions, built on top of a verified foundation.
+**Minimum viable hardware.** The Phase 1 beamformer is the simplest correct beamformer — conventional delay-and-sum with fixed weights. It validates the data path clearly and provides a clean baseline for the Phase 2 comparison.
 
-Clean extensibility. Every Phase 1 decision is made with Phase 2 in mind. The weight storage is separated from the data path so it can be upgraded from ROM to register bank without touching the multipliers. The pipeline depth is designed to accommodate the additional latency of the LMS update path. The test infrastructure is structured so the same testbench framework can drive Phase 2 with minimal changes.
+**Reproducibility.** The entire workflow is reproducible — RNGs are seeded (seed 42), test vectors are in version control, no step relies on manually copied numbers.
 
-Reproducibility. The entire workflow — from MATLAB scripts to RTL source to synthesis constraints — is designed to be reproducible by anyone with the same toolchain. Random number generators are seeded. Test vectors are checked into version control. No step relies on manually copied numbers between tools.
+## 6. Toolchain
 
-## 6. Toolchain selection and rationale
+### 6.1 MATLAB
 
-The toolchain was chosen layer by layer, with each choice justified by the question that layer must answer. The final selections are recorded below along with the reasoning.
+Used for all simulation work in both phases. Matrix syntax maps directly onto beamforming equations. Signal Processing Toolbox used for steering vectors and spectral analysis. Fixed-Point Designer toolbox was unavailable — Phase 1.2 implemented fixed-point arithmetic manually in pure double arithmetic using quantise/saturate helper functions.
 
-### 6.1 Algorithm simulation: MATLAB
+### 6.2 SystemVerilog (Phase 1 RTL)
 
-MATLAB was chosen over Python, C, or direct RTL simulation for the algorithm-development stage. MATLAB's matrix syntax maps one-to-one onto beamforming equations — the expression `w' * X` is literally the beamformer output. The Phased Array System Toolbox and Signal Processing Toolbox provide validated implementations of array geometries, steering vector generation, and radiation pattern computation, which would otherwise have to be written from scratch. MATLAB also has first-class support for fixed-point modelling via the Fixed-Point Designer toolbox, which is critical for Phase 1.2.
+Used for all Phase 1 RTL. `logic`, `always_ff`, `always_comb`, parameterised modules, `$readmemh` throughout. Phase 2 produces no RTL.
 
-An important secondary benefit is that MATLAB can export test vectors and expected outputs as hexadecimal or binary files that can be read directly by a SystemVerilog testbench using `$readmemh` or `$readmemb`. This automates the golden-reference flow and removes an entire class of transcription errors.
+### 6.3 Icarus Verilog — iverilog (Phase 1.4)
 
-### 6.2 Fixed-point modelling: MATLAB Fixed-Point Designer
+Used for Phase 1.4 functional co-simulation. Chosen because Vivado was unavailable on the development machine (disk space constraint — Vivado requires ~60 GB, machine had ~5 GB free). iverilog installs in under 100 MB and is fully sufficient for functional verification against test vectors.
 
-The same MATLAB environment handles floating-point and fixed-point modelling through the Fixed-Point Designer toolbox. `fi` objects allow specifying signed-ness, word length, and fraction length per signal, with configurable rounding and overflow modes. Sweeping word lengths is as simple as wrapping the simulation in a loop and plotting radiation-pattern degradation as a function of bit width. Doing the same analysis in RTL would require repeated synthesis runs and is not tractable.
+### 6.4 Vivado 2025.2 (Phase 1.5 synthesis only)
 
-### 6.3 RTL language: SystemVerilog
+Synthesis was run on a lab PC. Out-of-context mode was required because the design's 292 port signals exceed the physical IO count of the Artix-7 xc7a35tcpg236-1 package (106 pins) — expected for a sub-block. Synthesis confirmed correct DSP48 inference. Implementation (place-and-route) was not completed; timing closure is deferred. Phase 2 does not use Vivado.
 
-SystemVerilog was selected over VHDL and classic Verilog. It is the modern industry standard, combining Verilog's conciseness with stronger typing, packed structures, interfaces, and improved verification constructs. For this project specifically, SystemVerilog's `logic` type, packed arrays, and parameterised module interfaces make the pipelined complex multiplier and accumulator cleaner to express than in either VHDL or classic Verilog.
+### 6.5 No HLS
 
-The complex arithmetic operations in the beamformer benefit particularly from SystemVerilog's support for user-defined packed structs representing complex numbers, and from its explicit `always_ff` and `always_comb` blocks which communicate intent to the synthesizer more clearly than classic Verilog's `always @(posedge clk)` patterns.
+The original Phase 2 plan used Vitis HLS for the LMS update kernel. Dropped due to toolchain constraints (see §4). If a hardware implementation of the adaptive engine is undertaken in future, Vitis HLS remains the recommended approach — the Phase 2 MATLAB results will serve as the C-simulation reference.
 
-### 6.4 Implementation approach: RTL for data path, HLS for LMS
+## 7. Phase 1 detailed results
 
-The Phase 1 data path — complex multiplier, accumulator, weight ROM — is implemented in hand-written SystemVerilog RTL. This is because the data path is small, well-understood, and the exercise of writing it in RTL teaches the most about FPGA pipeline design, DSP48 inference, and timing closure. Hand-written RTL also gives precise control over latency and resource mapping, which is valuable for the throughput-critical data path.
+### 7.1 Phase 1.1 — floating-point simulation
 
-The Phase 2 LMS update engine is implemented in C++ using Vitis HLS (Xilinx High-Level Synthesis). The LMS update involves a more complex control flow — iterating over all M antennas to update each weight, managing the feedback of the error signal, and sequencing between pilot and data modes. Writing this in C++ with HLS pragmas to control pipelining and resource binding is significantly faster than hand-writing the equivalent RTL, and because the LMS algorithm is well within HLS's comfort zone (loops with regular structure, fixed-point arithmetic, no complex memory patterns), the generated RTL is of good quality.
+Parameters: M = 8, d/λ = 0.5, target 30°, interferer −20°, SNR 10 dB, SIR 0 dB, 512 samples, seed 42.
 
-This hybrid approach — RTL where control matters, HLS where productivity matters — is representative of how real FPGA design teams work on mixed-criticality projects.
+| Metric | Value |
+|--------|-------|
+| Array gain (signal) | +9.03 dB |
+| Array gain (interferer) | −9.53 dB |
+| Input SINR | −2.55 dB |
+| Output SINR | +15.78 dB |
+| SINR improvement | 18.33 dB |
 
-### 6.5 Synthesis and implementation: Vivado (Xilinx/AMD)
+### 7.2 Phase 1.2 — fixed-point analysis
 
-Vivado is the natural choice given that the RTL is hand-written for Xilinx FPGA targets and the HLS tool in use is Vitis HLS. Vivado has strong automatic DSP48 inference — if a multiply-accumulate is written correctly in SystemVerilog, the synthesizer will map it to a DSP48E1 or DSP48E2 slice without any explicit instantiation, which is essential for the beamformer core. Vivado also provides the WebPACK license free of charge for the device families typically used in academic projects (Artix-7, Zynq-7000), removing any licensing friction.
+| Signal | Format | WL | FL | Range |
+|--------|--------|----|----|-------|
+| Input x(n) | Q1.15 | 16 | 15 | [−1, +1) |
+| Weights w(m) | Q1.15 | 16 | 15 | [−1, +1) |
+| Multiplier output | Q2.30 | 32 | 30 | [−2, +2) |
+| Accumulator | Q4.31 | 36 | 31 | [−16, +16) |
+| Output y(n) | Q1.14 | 16 | 14 | [−2, +2) |
 
-Target board is flexible but the design is written with an Artix-7 or Zynq-7000 in mind as the baseline. Porting to a Kintex or UltraScale device would require only constraint-file changes.
+SQNR 33.51 dB, pattern deviation 0.0000 dB, SINR degradation 0.00 dB. All pass.
 
-### 6.6 Simulation: Vivado Simulator
+### 7.3 Phase 1.3 — RTL modules
 
-Vivado Simulator (xsim) is used for RTL simulation. It is tightly integrated with the Vivado flow, supports SystemVerilog fully, and handles mixed SV / VHDL simulation if any third-party IP is introduced. While ModelSim is also a valid option, staying within the Vivado ecosystem reduces tool-chain complexity for a single-developer academic project.
+| Module | Description |
+|--------|-------------|
+| complex_mult.sv | 2-stage pipelined complex multiplier. IN=16, OUT=32. Latency 2 cycles. |
+| complex_accumulator.sv | Accumulates M=8 sequential products. IN=32, OUT=36. |
+| weight_rom.sv | ROM loaded from vectors/weights.hex via $readmemh. Registered outputs. |
+| beamformer_top.sv | Instantiates 8 multipliers, 1 accumulator, 1 ROM. Serialises products. Saturating output: right-shift 17, clip to Q1.14. |
+| beamformer_tb.sv | Drives 512 samples, checks ±1 LSB, reports pass/fail. |
 
-### 6.7 Verification: MATLAB golden reference driving SV testbench
+### 7.4 Phase 1.4 — co-simulation
 
-The verification methodology is consistent across both phases. MATLAB generates a set of input samples (complex IQ data simulating the received signal at the antenna array) and the expected output samples (the beamformed output, or in Phase 2, the converged weights). These are written to text files in hexadecimal format with appropriate fixed-point representation. The SystemVerilog testbench reads these files using `$readmemh`, drives them into the DUT, and compares the DUT output against the expected output on every clock cycle.
+Tool: Icarus Verilog. Result: 512/512 samples matched, 0 mismatches, directed zero-input test passed.
 
-Any mismatch immediately fails the test and reports the cycle, expected value, and actual value. This makes regressions trivial to catch and root-cause.
+### 7.5 Phase 1.5 — synthesis
 
-## 7. Phase 1 detailed workflow
+Device: xc7a35tcpg236-1. Tool: Vivado 2025.2, out-of-context mode.
 
-### 7.1 Phase 1.1 — algorithm simulation (MATLAB floating-point)
+| Resource | Used | Available | Util% |
+|----------|------|-----------|-------|
+| Slice LUTs | 812 | 20,800 | 3.90% |
+| Slice Registers | 930 | 41,600 | 2.24% |
+| DSP48E1 | **16** | 90 | 17.78% |
+| Block RAM | 0 | 50 | 0.00% |
+| BUFG | 1 | 32 | 3.13% |
 
-File: `algo_sim.m` (or equivalent).
+DSP count of 16 is exact: 8 complex multipliers × 2 real multiplies each. Vivado inferred all DSPs correctly from parameterised RTL without manual instantiation.
 
-Status: complete.
-
-Parameters: M = 8 antennas, half-wavelength spacing (d/lambda = 0.5), target signal at 30 degrees from broadside, interferer at minus 20 degrees, SNR 10 dB, SIR 0 dB, 512 time samples.
-
-Algorithm: generate steering vectors for target and interferer, construct received signal matrix X = a(theta_sig) * s + sqrt(int_power) * a(theta_int) * i + sigma * n, compute weights w = a(theta_sig), normalise w to unit norm, apply beamformer y = w' * X, compute array factor by sweeping a trial angle phi over minus 90 to plus 90 degrees.
-
-Outputs: radiation pattern in dB (rectangular), polar radiation pattern, weight values (real and imaginary), weight phases with unwrap, beamformer output in time domain compared against the desired signal. All plots have been verified as correct — main lobe at 30 degrees, weights exhibit linear phase progression of 90 degrees per element, beamformer output tracks the desired signal modulo noise and residual interference.
-
-Key verification outputs from this stage: array gain toward signal 9 dB, array gain toward interferer minus 9.5 dB, input SINR minus 2.55 dB, output SINR plus 15.78 dB, SINR improvement 18.33 dB. These numbers constitute the golden reference that the fixed-point and RTL stages must reproduce within tolerance.
-
-### 7.2 Phase 1.2 — fixed-point analysis (MATLAB Fixed-Point Designer)
-
-File: `fixed_point_sim.m`. This script imports parameters and signals from `algo_sim.m` to avoid duplication of constants and random-seed configuration.
-
-Purpose: determine the minimum word lengths for input samples, weights, multiplier outputs, and accumulator that produce acceptable radiation-pattern fidelity relative to the floating-point reference.
-
-Starting assumptions, to be validated: input samples Q1.15 (16-bit signed, 15 fractional bits), weights Q1.15, multiplier output Q2.30 (product of two Q1.15 values), accumulator Q5.30 (M = 8 summations require log2(8) = 3 bits of integer headroom above the product format).
-
-Methodology: convert the floating-point `w`, `X`, and `s` variables to `fi` objects with the starting word lengths. Re-run the beamformer and the array-factor sweep in fixed-point. Compare the radiation pattern against the floating-point reference and compute the maximum deviation in dB. Sweep each word length downward and plot the degradation curve. The smallest word length at which the main-lobe peak, 3 dB beamwidth, and sidelobe levels remain within defined tolerances is selected as the RTL target.
-
-Output: a summary table of chosen word lengths per signal, saved to disk, and a set of quantised test vectors in hex format for use by the SystemVerilog testbench.
-
-### 7.3 Phase 1.3 — RTL implementation (SystemVerilog)
-
-Modules to implement:
-
-- `complex_mult.sv` — a pipelined complex multiplier. Input: two complex operands in the chosen fixed-point format. Output: complex product. Internal structure: four real multipliers wired in the standard (a + jb)(c + jd) = (ac - bd) + j(ad + bc) pattern. Two pipeline stages (one after the partial products, one after the sum) to ensure DSP48 inference and meet timing at the target clock. Parameterise on input and output widths.
-
-- `complex_accumulator.sv` — sums M complex products into a single complex output per sample clock. Pipelined adder tree to keep the critical path short. Parameterised on M and on input width. Output register holds the final sum.
-
-- `weight_rom.sv` — stores the precomputed fixed-point weights. Synthesized as either distributed RAM or a block RAM (BRAM), depending on M and the weight width. Initialised from a hex file generated by `fixed_point_sim.m`. One read port delivering all M weights in parallel to the multiplier array.
-
-- `beamformer_top.sv` — instantiates M complex multipliers in parallel, one accumulator, and the weight ROM. Handles pipeline-depth alignment between the data path and any valid-signal propagation.
-
-- `beamformer_tb.sv` — testbench. Reads input samples and expected outputs from hex files, drives the DUT, compares outputs, counts mismatches, reports pass/fail.
-
-Coding conventions: use `logic` throughout, not `reg` or `wire`. Use `always_ff` for sequential blocks, `always_comb` for combinational. Use packed structs for complex numbers. Parameterise all widths. Include `timeunit` and `timeprecision` declarations in the testbench. No latches.
-
-### 7.4 Phase 1.4 — co-simulation and verification
-
-Run the SystemVerilog testbench in Vivado Simulator. Drive the input samples from the fixed-point MATLAB reference, capture the output, compare against the expected output on every clock cycle. Both must match exactly within the rounding mode specified in the fixed-point analysis. Any mismatch indicates either an RTL bug, a fixed-point format mismatch, or a pipeline-alignment issue.
-
-Additional directed tests to run: impulse response (all antennas receive a single unit impulse), known-angle test (synthesize a pure tone from a specific angle and confirm the output matches the expected beam gain), all-zero input (output must be zero), saturation test (drive maximum-magnitude input and verify no overflow in the accumulator).
-
-Acceptance criterion for this stage: all directed tests pass and the full 512-sample vector matches the MATLAB reference to within one least-significant-bit rounding error.
-
-### 7.5 Phase 1.5 — synthesis and timing closure
-
-Run Vivado synthesis targeting the chosen device (Artix-7 baseline). Extract the resource utilisation report — number of DSP slices used (expect approximately M = 8 to M times 2 = 16 DSPs depending on pipeline choices), LUT count, flip-flop count, BRAM count. Verify that DSP48 inference has captured all the complex multipliers — if not, review the RTL to ensure the multiplication pattern is DSP-friendly.
-
-Set the target clock frequency (suggested: 200 MHz baseline, 300 MHz stretch). Run place-and-route and review the timing report. Fix any failing paths by adjusting pipeline depth. Generate a bitstream if a board is available for hardware testing; otherwise, the synthesized design is the Phase 1 deliverable.
+**Timing closure: not completed.** The timing summary report was unavailable after synthesis (greyed out — requires full place-and-route). Full implementation was not completed due to IO placement constraints in the target package. Timing closure at 200 MHz is identified as future work. The synthesis utilisation report is the Phase 1.5 deliverable.
 
 ## 8. Phase 2 detailed workflow
 
-### 8.1 Phase 2.1 — LMS algorithm simulation (MATLAB floating-point)
+### 8.1 Phase 2.1 — LMS simulation (MATLAB)
 
-File: `lms_sim.m`, also importing from `algo_sim.m`.
+File: `matlab/lms_sim.m`. Imports signal parameters from `algo_sim.m` (same seed, same array geometry, same SNR/SIR conditions) to ensure a fair comparison against the Phase 1 baseline.
 
-Purpose: validate that the LMS weight-update loop converges to the correct beam direction from an arbitrary starting point, using only a pilot reference signal.
+Algorithm: initialise w = zeros(M,1). For each pilot sample n:
+- y(n) = w' · x(n)
+- e(n) = d(n) − y(n)  (d(n) is the known pilot)
+- w = w + μ · conj(e(n)) · x(n)
 
-Algorithm: initialise weights to all-zero or small-random. For each pilot sample, compute output y(n) = w' * x(n), compute error e(n) = d(n) - y(n) where d(n) is the known pilot, update weights as w(n+1) = w(n) + mu * conj(e(n)) * x(n). Sweep step size mu over a range and observe convergence speed versus stability. Typical convergence in 100 to 500 samples for the chosen array geometry.
+Sweep step size μ over a range (e.g. 0.001 to 0.1). Observe convergence speed versus stability.
 
-Outputs: weight convergence trajectories (real and imaginary parts of each weight over time), mean-squared error curve on a log scale, radiation pattern before and after convergence, final beam-direction estimate versus true target direction.
+Outputs:
+- Weight convergence trajectories (real and imaginary parts vs iteration)
+- Mean squared error (learning curve) on log scale
+- Radiation pattern at 0, 50%, and steady-state iterations
+- SINR vs iteration number
+- Converged beam direction vs true target (30°)
 
-### 8.2 Phase 2.2 — fixed-point LMS analysis
+### 8.2 Phase 2.2 — RLS simulation (MATLAB)
 
-File: `lms_fixed_sim.m`.
+File: `matlab/rls_sim.m`. Same signal conditions as Phase 2.1.
 
-Purpose: verify that LMS converges correctly with finite-precision arithmetic and identify any overflow or underflow conditions in the weight update. LMS is notoriously sensitive to fixed-point issues because the weight accumulator must hold small updates over many iterations without losing precision.
+Algorithm: initialise w = zeros(M,1), P = δ⁻¹·I. For each pilot sample n:
+- k(n) = P·x(n) / (λ + x(n)'·P·x(n))
+- e(n) = d(n) − w'·x(n)
+- w = w + k(n)·conj(e(n))
+- P = λ⁻¹·P − λ⁻¹·k(n)·x(n)'·P
 
-Additional considerations over Phase 1.2: the weight update `mu * conj(e) * x` can be very small in magnitude, so the fraction length of the weight register must be long enough to represent these small updates. The step size mu is typically chosen as a power of two to allow implementation by right-shift rather than multiplication.
+Sweep forgetting factor λ (e.g. 0.95 to 0.9999).
 
-Output: locked-in word lengths for weight register (typically wider than the Phase 1 weight ROM), error signal, LMS product, and step size shift amount.
+Outputs: same set as Phase 2.1.
 
-### 8.3 Phase 2.3 — HLS implementation of LMS update (Vitis HLS)
+### 8.3 Phase 2.3 — comparison (MATLAB)
 
-File: `lms_update.cpp`, `lms_update.h`.
+File: `matlab/comparison.m`.
 
-Describe the LMS update as a C++ function with `ap_fixed` types matching the word lengths from Phase 2.2. Annotate with `#pragma HLS PIPELINE` for single-sample throughput, `#pragma HLS UNROLL` to parallelise the weight update across antennas, and `#pragma HLS ARRAY_PARTITION` on the weight register array to provide enough read/write ports.
+Comparison axes:
 
-Co-simulate in Vitis HLS against test vectors from `lms_fixed_sim.m`. Export as IP (packaged RTL) for integration into the Vivado block design.
+| Axis | Description |
+|------|-------------|
+| Convergence speed | Samples to reach within 1 dB of steady-state SINR |
+| Steady-state SINR | vs Phase 1 fixed-weight result (15.78 dB) |
+| Sensitivity | SINR degradation for ±50% variation in μ or λ |
+| Complexity | MAC operations per sample: LMS = O(M), RLS = O(M²) |
+| Hardware cost estimate | Approximate DSP count for RTL implementation of each |
 
-### 8.4 Phase 2.4 — integration and verification
+Primary output: recommendation for which algorithm to implement in hardware in a future Phase 3, with justification based on the comparison results and the 5G DMRS pilot length constraint (typically 100–200 pilot samples per slot).
 
-Replace the Phase 1 weight ROM with a writeable weight register bank. Instantiate the HLS-generated LMS update module. Add a pilot-sequencer FSM that switches between weight-update mode (during pilot symbols) and data-passthrough mode (during data symbols, weights frozen).
+## 9. Verification strategy
 
-Write a new testbench that generates a pilot-then-data sequence and verifies that weights converge during the pilot phase and the beamformer output during the data phase shows the expected SINR improvement.
+Phase 1 followed an equivalence-chain model. Each level verified against the previous:
 
-### 8.5 Phase 2.5 — synthesis and comparison
+- Level 1: floating-point MATLAB → verified against analytical formulas ✓
+- Level 2: fixed-point MATLAB → verified against Level 1 within tolerances ✓
+- Level 3: RTL simulation → verified against Level 2 exactly (±1 LSB) ✓
+- Level 4: synthesis → DSP inference verified against expected count ✓
+- Level 4 (timing) → not verified, deferred
 
-Synthesize the full Phase 2 design. Compare resource usage against Phase 1 — LMS adds DSP slices for the update multipliers and registers for the weight bank. Verify timing closure at the same target clock. Document the delta in resources and power consumption as the cost of adaptivity.
+Phase 2: LMS and RLS steady-state SINR must converge to ≥15 dB (matching Phase 1.1 output SINR of 15.78 dB) to confirm the algorithms are solving the same problem. This is the pass criterion for Phase 2.1 and 2.2.
 
-## 9. Data types and precision
+## 10. Current project status
 
-The following fixed-point formats are the working assumptions for the project. Exact values are to be confirmed by Phase 1.2 and Phase 2.2 simulation.
+Phase 1 is complete. Functional verification passed. Synthesis confirms correct resource mapping. Timing closure is a known open item.
 
-Signal samples x(n) per antenna: 16-bit signed, Q1.15 format, one sign bit, 15 fractional bits. Real and imaginary parts stored separately, giving 32 bits per complex sample.
+Phase 2 is next, starting with `lms_sim.m`.
 
-Weights w(m): 16-bit signed, Q1.15 format, matching the input sample format. Same rationale — magnitude bounded by unity given normalisation.
+Locked-in decisions for Phase 2: MATLAB-only, floating-point, no RTL, no HLS, no Vivado. LMS (2.1) and RLS (2.2) both implemented. Comparison against Phase 1 fixed-weight baseline is the deliverable. Same signal parameters and RNG seed as Phase 1 throughout.
 
-Complex multiplier output: 32-bit signed per component, Q2.30 format (product of two Q1.15 values). Real and imaginary parts computed as sums of real-multiplier products with appropriate sign handling.
-
-Accumulator: 36-bit signed per component, Q5.31 or similar format. Extra integer bits provide headroom for M = 8 summations without saturation. Exact width to be confirmed during fixed-point analysis.
-
-Final output y(n): truncated back to Q1.15 or Q2.14 for downstream processing, depending on post-beamformer requirements.
-
-LMS-specific formats (Phase 2): error signal e(n) same as y(n) format. Step size mu a power of two, implemented as a right shift. Weight update accumulator may require wider fraction length than the Phase 1 weights — to be determined by Phase 2.2 analysis.
-
-## 10. Verification strategy
-
-The verification strategy follows an equivalence-chain model. Each implementation level is verified against the previous level, forming a chain of provable equivalences from algorithm to hardware.
-
-Level 1: floating-point MATLAB simulation. Verified against analytical expectations — main lobe location, array gain formulas, input-output SINR predictions. This is the root of the verification tree.
-
-Level 2: fixed-point MATLAB simulation. Verified against level 1 with a defined tolerance on pattern metrics (peak deviation less than 0.5 dB, null depth within 5 dB of reference).
-
-Level 3: RTL simulation. Verified against level 2 exactly — every output sample must match the fixed-point MATLAB output to the least-significant bit, given the same input vectors.
-
-Level 4: synthesised hardware. If hardware testing is performed, captured outputs from the FPGA are compared against level 3 simulation outputs for the same input vectors. Exact match expected.
-
-Regression testing: the entire verification chain is re-run any time a change is made to the RTL, the fixed-point formats, or the MATLAB simulation. A passing run at every level is required before merging any change.
-
-## 11. Current project status
-
-As of the latest update, the project is at the end of Phase 1.1. The MATLAB floating-point simulation (`algo_sim.m`) is written, runs cleanly, and produces the expected plots: radiation pattern, polar pattern, weights, and beamformer output. Phase 1.2 — fixed-point analysis — is the next task to be undertaken.
-
-Design decisions locked in: all toolchain selections, the two-phase structure, the parameter set (M = 8, target at 30 degrees, interferer at minus 20 degrees), the conventional delay-and-sum beamformer approach, the use of a ROM for weight storage in Phase 1, the use of LMS for Phase 2 adaptation.
-
-Decisions pending: exact word lengths for fixed-point representation (to be determined in Phase 1.2), target FPGA device and board (Artix-7 is the baseline assumption), target clock frequency (200 MHz is the working target).
-
-## 12. Project file structure
-
-The recommended project folder structure:
+## 11. Project file structure
 
 ```
-beamformer_project/
-├── DESIGN.md                    (this document)
-├── README.md                    (quick-start and build instructions)
+260410-beamforming/
+├── DESIGN.md                        (this document)
+├── project_update.pdf               (Phase 1 complete report)
+├── project_update.tex               (LaTeX source)
+├── .gitignore
 ├── matlab/
-│   ├── algo_sim.m               (Phase 1.1 — floating-point simulation)
-│   ├── fixed_point_sim.m        (Phase 1.2 — fixed-point analysis)
-│   ├── lms_sim.m                (Phase 2.1 — LMS simulation)
-│   ├── lms_fixed_sim.m          (Phase 2.2 — fixed-point LMS)
-│   ├── export_vectors.m         (writes test vectors for RTL testbench)
-│   └── plots/                   (saved .png outputs)
+│   ├── algo_sim.m                   (Phase 1.1 — floating-point)
+│   ├── fixed_point_sim.m            (Phase 1.2 — fixed-point analysis)
+│   ├── lms_sim.m                    (Phase 2.1 — LMS simulation)
+│   ├── rls_sim.m                    (Phase 2.2 — RLS simulation)
+│   ├── comparison.m                 (Phase 2.3 — algorithm comparison)
+│   └── command_line_output.txt      (diary output from latest run)
+├── plots/
+│   ├── Radiation Pattern.png
+│   ├── Polar Pattern.png
+│   ├── Beamforming Weights.png
+│   ├── Beamformer Output.png
+│   ├── FP1.2_Radiation_Pattern_Comparison.png
+│   ├── FP1.2_Pattern_Deviation.png
+│   ├── FP1.2_Word-Length_Sweep.png
+│   ├── FP1.2_Output_Comparison.png
+│   └── FP1.2_Quantisation_Error.png
 ├── rtl/
 │   ├── complex_mult.sv
 │   ├── complex_accumulator.sv
 │   ├── weight_rom.sv
 │   ├── beamformer_top.sv
 │   └── beamformer_tb.sv
-├── hls/
-│   ├── lms_update.cpp
-│   ├── lms_update.h
-│   └── lms_testbench.cpp
-├── vivado/
-│   ├── project.xpr              (Vivado project)
-│   ├── constraints.xdc
-│   └── reports/                 (synthesis, timing, utilisation)
 └── vectors/
-    ├── inputs.hex
     ├── weights.hex
+    ├── inputs.hex
     └── expected_output.hex
 ```
 
-## 13. Guidelines for AI agents
+## 12. Guidelines for AI agents
 
-AI agents (Claude Code or equivalent) working on this project should follow these guidelines:
+Treat this document as authoritative. If a user instruction conflicts with a decision recorded here, flag the conflict and request clarification.
 
-Treat this document as authoritative. If a user instruction conflicts with a decision recorded here, flag the conflict and request clarification. Do not silently override documented design decisions.
+**Phase 1.5 is synthesis-only.** Do not describe Phase 1.5 as a full implementation. Timing closure was not achieved and is honestly recorded as future work.
 
-Preserve verification equivalence. Any change to the MATLAB simulation must be accompanied by regeneration of the test vectors. Any change to the RTL must be verified against the existing MATLAB golden reference before being considered complete. Do not modify test vectors to make failing tests pass.
+**Phase 2 scope is MATLAB-only.** Do not propose RTL, HLS, or Vivado work for Phase 2. If the user asks to extend Phase 2 into hardware, update this document first and record the rationale.
 
-Ask before introducing new dependencies. The toolchain is deliberately minimal. Do not introduce new MATLAB toolboxes, new HLS libraries, or new Vivado IP cores without explicit approval. If a new dependency seems warranted, propose it and explain why.
+**Preserve Phase 1 verification.** Do not modify test vectors, RTL files, or the MATLAB golden reference without explicit instruction. Phase 1 is complete.
 
-Maintain coding conventions. SystemVerilog code uses `logic`, `always_ff`, and `always_comb` consistently. Modules are parameterised. No latches. MATLAB code uses descriptive variable names, consistent comment style, and imports from `algo_sim.m` rather than duplicating parameters.
+**Preserve RNG seed.** All MATLAB simulations use seed 42. Phase 2 scripts must use the same seed so the signal environment is identical and comparisons are fair.
 
-Preserve the phase boundary. Phase 1 and Phase 2 are separate deliverables. Do not mix Phase 2 features (LMS logic, writeable weights, pilot sequencer) into Phase 1 files. If extending a Phase 1 module to support Phase 2, either parameterise cleanly or create a new Phase 2 variant — do not silently modify Phase 1 behaviour.
+**No new toolbox dependencies for Phase 2.** Phase 2 must run on standard MATLAB with Signal Processing Toolbox only. No Fixed-Point Designer, no Phased Array Toolbox.
 
-Update this document. If a design decision changes during implementation, update the relevant section of this document and note the change in a revision history at the top. This document is the single source of truth; letting it drift out of sync with the code defeats its purpose.
+**Update this document** if any design decision changes. Add a row to the revision history table.
 
-Preserve randomness seeding. The MATLAB simulations seed their random number generators for reproducibility. Do not remove or modify these seeds. Any test-vector regeneration must use the same seeds so that previous verification results remain valid.
+## 13. Glossary
 
-## 14. Glossary
+**Array factor (AF).** The directional response of an antenna array — inner product of the weight vector with the steering vector at each angle.
 
-Array factor (AF). The complex-valued directional response of an antenna array as a function of angle, computed as the inner product of the weight vector with the steering vector at each angle.
+**Beamforming.** Spatial signal processing combining antenna signals with complex weights to form a directional pattern.
 
-Beamforming. Spatial signal processing technique combining multiple antenna signals with complex weights to produce a directional reception or transmission pattern.
+**Broadside.** Direction perpendicular to the array axis.
 
-Broadside. The direction perpendicular to the antenna array axis. Angles in this project are measured relative to broadside, with positive angles typically on one side and negative on the other.
+**Delay-and-sum beamformer.** Simplest beamformer — weights equal the conjugate of the steering vector. Also called the conventional beamformer.
 
-Delay-and-sum beamformer. The simplest beamformer, in which weights equal the conjugate of the steering vector toward the target. Also called the conventional beamformer.
+**DMRS.** Demodulation reference signal. Pilot symbols in 5G NR slots used for channel estimation and adaptive weight updates.
 
-DMRS (demodulation reference signal). Pilot symbols embedded in the 5G NR slot structure that the receiver uses for channel estimation and, in this project, as the reference signal for LMS adaptation.
+**DSP48E1.** Xilinx FPGA primitive implementing a signed multiply-accumulate. Inferred automatically by Vivado for compatible RTL patterns.
 
-DSP48. A Xilinx FPGA hardware primitive that implements a signed multiply-accumulate with pre-adder and accumulator registers. Inferred automatically by Vivado for compatible RTL patterns.
+**Forgetting factor (λ).** RLS parameter in (0, 1]. Controls how quickly old samples are down-weighted. λ close to 1 gives slow forgetting (stable, slow tracking). λ further from 1 gives fast forgetting (fast tracking, noisier).
 
-Fixed-point arithmetic. Integer arithmetic with an implicit radix point, parameterised by word length and fraction length. Used in FPGA designs because it is much cheaper than floating-point.
+**Golden reference.** The authoritative expected output. In this project, the Phase 1.1 MATLAB output is the golden reference for all subsequent levels.
 
-Fixed-Point Designer. A MATLAB toolbox providing the `fi` object type for simulating fixed-point arithmetic in MATLAB code.
+**LMS (least mean squares).** Adaptive algorithm updating weights proportional to the instantaneous error gradient. Complexity O(M) per sample. Controlled by step size μ.
 
-Golden reference. The authoritative expected output for a computation, used as the comparison target in verification. In this project, the MATLAB simulation output is the golden reference for the RTL.
+**RLS (recursive least squares).** Adaptive algorithm minimising the weighted sum of all past squared errors. Faster convergence than LMS but O(M²) per sample. Controlled by forgetting factor λ.
 
-HLS (high-level synthesis). A design methodology in which hardware is described in a high-level language (typically C or C++) and an automated tool generates RTL. Vitis HLS is the Xilinx implementation.
+**SINR.** Signal to interference plus noise ratio. Primary performance metric.
 
-LMS (least mean squares). An adaptive filtering algorithm that updates filter weights proportional to the instantaneous gradient of the squared error. Used in Phase 2 for adaptive weight computation.
+**Steering vector.** Complex vector representing phase progression across array elements for a signal at angle θ. Element m: exp(jπm sin θ) for half-wavelength ULA.
 
-RTL (register transfer level). A level of hardware abstraction at which signals, registers, and combinational logic are described explicitly, typically in SystemVerilog or VHDL.
+**Step size (μ).** LMS parameter controlling weight update magnitude. Too large: unstable. Too small: slow convergence.
 
-SINR (signal to interference plus noise ratio). The ratio of signal power to the sum of interference power and noise power, in dB. Improving SINR is the main quantitative goal of beamforming.
+**Timing closure.** The process of verifying that all signal paths in the synthesised design meet the target clock period after place-and-route. Not completed in Phase 1.5.
 
-Steering vector. A complex vector representing the phase progression of a signal arriving from a specific angle across the elements of an antenna array. For a uniform linear array with half-wavelength spacing, the m-th element of the steering vector for angle theta is exp(j pi m sin(theta)).
+**ULA.** Uniform linear array — equally spaced elements along a straight line.
 
-ULA (uniform linear array). An antenna array with equally spaced elements along a straight line. The simplest array geometry and the one used in this project.
+**Vivado.** Xilinx FPGA design suite. Used in Phase 1.5 synthesis only.
 
-Vitis HLS. The Xilinx high-level synthesis tool. Takes C++ with HLS pragmas and produces synthesizable RTL.
-
-Vivado. The Xilinx FPGA design suite, including synthesis, place-and-route, timing analysis, and simulation.
-
-Weight vector. The vector of complex coefficients applied to antenna signals by the beamformer. In Phase 1, fixed at synthesis. In Phase 2, updated adaptively by LMS.
-
----
-
-Revision history
-
-- Initial version — Phase 1.1 complete, Phase 1.2 next.
+**Weight vector.** Vector of complex coefficients applied to antenna signals. Fixed in Phase 1. Converged adaptively in Phase 2 simulation.
