@@ -142,17 +142,23 @@ Both phases complete. All deliverables in `project_update.pdf`. Timing closure (
 
 ```
 260410-beamforming/
-├── PLAN.md                          (this document)
-├── project_update.pdf               (all results and findings)
-├── project_update.tex               (LaTeX source)
+├── CHANGELOG.md
+├── README.md
+├── Makefile
 ├── .gitignore
+├── docs/
+│   ├── PLAN.md                      (this document)
+│   ├── REQUIREMENTS.md
+│   ├── PROJECT_REVIEW.md
+│   └── reports/
+│       └── project_update.pdf       (all results and findings)
 ├── matlab/
+│   ├── signal_setup.m               (canonical signal model)
 │   ├── algo_sim.m                   (Phase 1.1)
 │   ├── fixed_point_sim.m            (Phase 1.2)
 │   ├── lms_sim.m                    (Phase 2.1)
 │   ├── rls_sim.m                    (Phase 2.2)
-│   ├── comparison.m                 (Phase 2.3)
-│   └── command_line_output.txt
+│   └── comparison.m                 (Phase 2.3)
 ├── plots/                           (all generated figures)
 ├── rtl/
 │   ├── complex_mult.sv
@@ -160,6 +166,9 @@ Both phases complete. All deliverables in `project_update.pdf`. Timing closure (
 │   ├── weight_rom.sv
 │   ├── beamformer_top.sv
 │   └── beamformer_tb.sv
+├── synthesis/
+│   ├── synth.tcl
+│   └── beamformer_top_utilization_synth.rpt
 └── vectors/
     ├── weights.hex
     ├── inputs.hex

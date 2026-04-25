@@ -52,13 +52,14 @@ beamformer_sim: $(RTL_SOURCES)
 	$(IVERILOG) -g2012 -o $@ $(RTL_SOURCES)
 
 # -----------------------------------------------------------------------------
-# LaTeX report (two passes for cross-references)
+# LaTeX report (compiled at root so plots/ paths resolve; PDF moved to docs/reports/)
 # -----------------------------------------------------------------------------
-report: project_update.pdf
+report: docs/reports/project_update.pdf
 
-project_update.pdf: project_update.tex
+docs/reports/project_update.pdf: project_update.tex
 	$(PDFLATEX) -interaction=nonstopmode project_update.tex
 	$(PDFLATEX) -interaction=nonstopmode project_update.tex
+	mv project_update.pdf docs/reports/project_update.pdf
 
 # -----------------------------------------------------------------------------
 # Vivado synthesis (lab PC only)
