@@ -2,6 +2,7 @@
 *.asv
 *.mex*
 slprj/
+matlab/command_line_output.txt
 
 # Vivado build artifacts
 vivado/
