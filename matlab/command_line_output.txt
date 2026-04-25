@@ -1,30 +1,56 @@
 =======================================================
-  PHASE 2.2 — RLS ADAPTIVE BEAMFORMER SIMULATION
+  PHASE 2.3 — ALGORITHM COMPARISON
+  LMS vs RLS vs Phase 1 Fixed Beamformer
 =======================================================
 
-Phase 1 fixed-weight SINR : 15.78 dB
-Phase 2.1 LMS SINR        : 18.93 dB
+=======================================================
+  COMPARISON SUMMARY
+=======================================================
 
-Best forgetting factor : lambda = 1.000
+Signal environment: M=8, theta_sig=30 deg, theta_int=-20 deg
+SNR=10 dB, SIR=0 dB, N=512 samples
+
+Algorithm                         SINR (dB)         Conv. sample     MACs/sample
+--------------------------------------------------------------------------------
+Phase 1 Fixed                         15.78                  N/A        O(M) = 8
+LMS (mu=0.001)                        18.93                   15       O(M) = 32
+RLS (lambda=1.000)                    18.90                    2    O(M^2) = 288
+--------------------------------------------------------------------------------
+
+SINR improvement over fixed:
+  LMS: +3.15 dB
+  RLS: +3.12 dB
+
+Convergence speed (samples to within 1 dB of fixed baseline):
+  LMS: 15 samples
+  RLS: 2 samples
+
+Sensitivity:
+  LMS stable range: mu in [0.001, 0.010]
+  RLS stable range: lambda in [0.95, 1.000]
 
 =======================================================
-  RESULTS SUMMARY
+  RECOMMENDATION FOR FUTURE HARDWARE IMPLEMENTATION
 =======================================================
-  Array: M=8, d/lam=0.5
-  Target: 30 deg  |  Interferer: -20 deg
-  SNR: 10 dB  |  SIR: 0 dB
--------------------------------------------------------
-  Phase 1 fixed-weight SINR    : +15.78 dB
-  Phase 2.1 LMS SINR           : +18.93 dB
-  RLS converged SINR           : +18.90 dB  (lambda=1.000)
-  RLS delta vs fixed           : +3.12 dB
-  RLS delta vs LMS             : -0.03 dB
-  Convergence sample (<1dB gap): 2 / 512
--------------------------------------------------------
-  Forgetting factor sweep results:
-    lambda = 0.900  ->  converged SINR = 17.17 dB
-    lambda = 0.950  ->  converged SINR = 18.26 dB
-    lambda = 0.990  ->  converged SINR = 18.80 dB
-    lambda = 0.999  ->  converged SINR = 18.90 dB
-    lambda = 1.000  ->  converged SINR = 18.90 dB
+
+  For a stationary 5G NR channel with DMRS pilots:
+
+  RECOMMENDED: LMS with mu = 0.001 to 0.005
+
+  Rationale:
+  - LMS achieves near-identical steady-state SINR to RLS
+    (18.93 dB vs 18.90 dB, delta < 0.03 dB)
+  - LMS converges in 15 samples -- well within 5G NR
+    DMRS pilot length (~100-200 samples per slot)
+  - LMS requires O(M) = 32 MACs/sample vs
+    RLS O(M^2) = 288 MACs/sample -- 8x lower hardware cost
+  - LMS maps directly to DSP48 pipeline (M parallel
+    multiply-accumulate units, same structure as Phase 1)
+  - RLS requires an MxM matrix inverse update -- expensive
+    in hardware and requires M^2 registers
+
+  RLS would be preferred if the channel is non-stationary
+  (fast-moving user) requiring lambda < 1 for tracking.
+  In a static lab scenario, LMS is sufficient.
+
 =======================================================
