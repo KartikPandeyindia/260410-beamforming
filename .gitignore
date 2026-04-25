@@ -20,9 +20,10 @@ synthesis/*.log
 *.vcd
 beamformer_sim
 
-# LaTeX
+# LaTeX build artefacts
 project_update.aux
 project_update.log
 project_update.out
-project_update.tex
-docs/reports/project_update.tex
+docs/reports/project_update.aux
+docs/reports/project_update.log
+docs/reports/project_update.out
