@@ -27,7 +27,7 @@ fprintf('  PHASE 1.2 — FIXED-POINT ANALYSIS\n');
 fprintf('=================================================\n');
 
 % -------------------------------------------------------------------------
-% 2. FIXED-POINT FORMAT DEFINITIONS  (DESIGN.md §9)
+% 2. FIXED-POINT FORMAT DEFINITIONS  (PLAN.md §7.1)
 % -------------------------------------------------------------------------
 WL_x    = 16;  FL_x    = 15;   % Input samples:     Q1.15
 WL_w    = 16;  FL_w    = 15;   % Weights:           Q1.15

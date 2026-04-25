@@ -28,34 +28,26 @@ fprintf('  PHASE 2.1 — LMS ADAPTIVE BEAMFORMER SIMULATION\n');
 fprintf('=======================================================\n\n');
 
 % -------------------------------------------------------------------------
-% 1. PARAMETERS AND SIGNAL GENERATION
-%    Identical to algo_sim.m — same seed, same order of RNG draws.
+% 1. SIGNAL ENVIRONMENT
+%    All parameters and generated signals from the canonical signal model.
+%    See signal_setup.m for array geometry, channel conditions, and RNG.
 % -------------------------------------------------------------------------
-M          = 8;
-d_over_lam = 0.5;
-theta_sig  = 30;
-theta_int  = -20;
-SNR_dB     = 10;
-SIR_dB     = 0;
-N_samples  = 512;
-
-rng(42);
-
-SNR_lin     = 10^(SNR_dB / 10);
-SIR_lin     = 10^(SIR_dB / 10);
-sig_power   = 1.0;
-noise_sigma = sqrt(sig_power / SNR_lin);
-int_power   = sig_power / SIR_lin;
-
-a_sig = steeringVector(theta_sig, M, d_over_lam);
-a_int = steeringVector(theta_int, M, d_over_lam);
-
-s     = (randn(1, N_samples) + 1j * randn(1, N_samples)) / sqrt(2);
-i_sig = (randn(1, N_samples) + 1j * randn(1, N_samples)) / sqrt(2);
-noise = noise_sigma * (randn(M, N_samples) + 1j * randn(M, N_samples)) / sqrt(2);
-
-X = a_sig * s + sqrt(int_power) * a_int * i_sig + noise;
-d = s;   % pilot (desired signal)
+env         = signal_setup();
+M           = env.M;
+d_over_lam  = env.d_over_lam;
+theta_sig   = env.theta_sig;
+theta_int   = env.theta_int;
+SNR_dB      = env.SNR_dB;
+SIR_dB      = env.SIR_dB;
+N_samples   = env.N_samples;
+sig_power   = env.sig_power;
+noise_sigma = env.noise_sigma;
+int_power   = env.int_power;
+a_sig       = env.a_sig;
+a_int       = env.a_int;
+X           = env.X;
+s           = env.s;
+d           = env.d;
 
 % -------------------------------------------------------------------------
 % 2. PHASE 1 FIXED-WEIGHT BASELINE

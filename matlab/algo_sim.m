@@ -17,61 +17,25 @@
 clc; clear; close all;
 
 % -------------------------------------------------------------------------
-% 1. PARAMETERS
-%    Modify these to explore different array / channel configurations
+% 1. SIGNAL ENVIRONMENT
+%    All parameters and generated signals from the canonical signal model.
+%    See signal_setup.m for array geometry, channel conditions, and RNG.
 % -------------------------------------------------------------------------
-M           = 8;       % Number of antenna elements
-d_over_lam  = 0.5;     % Element spacing / wavelength (0.5 = half-wavelength)
-theta_sig   = 30;      % Target signal angle (degrees, from broadside)
-theta_int   = -20;     % Interferer angle (degrees)
-SNR_dB      = 10;      % Signal-to-noise ratio (dB)
-SIR_dB      = 0;       % Signal-to-interferer ratio (dB)  [0 = equal power]
-N_samples   = 512;     % Number of time-domain samples to simulate
-
-rng(42);               % Fixed seed for reproducibility
-
-% -------------------------------------------------------------------------
-% 2. STEERING VECTOR
-%
-%    For a ULA with M elements and spacing d, a signal arriving from
-%    angle theta induces a phase shift between adjacent elements of:
-%       psi = 2*pi * (d/lambda) * sin(theta)
-%
-%    The steering vector is:
-%       a(theta) = [1, e^{j*psi}, e^{j*2*psi}, ..., e^{j*(M-1)*psi}]^T
-%
-%    This encodes the phase relationship of a wavefront across the array.
-% -------------------------------------------------------------------------
-a_sig = steeringVector(theta_sig, M, d_over_lam);  % Target  (M x 1)
-a_int = steeringVector(theta_int, M, d_over_lam);  % Interferer (M x 1)
-
-% -------------------------------------------------------------------------
-% 3. SIGNAL GENERATION
-%
-%    Received signal at the array:
-%       x(n) = a_sig * s(n) + sqrt(P_int) * a_int * i(n) + noise(n)
-%
-%    s(n)    : desired signal  (complex baseband, unit power)
-%    i(n)    : interferer signal
-%    noise(n): spatially white complex Gaussian noise
-% -------------------------------------------------------------------------
-SNR_lin = 10^(SNR_dB / 10);
-SIR_lin = 10^(SIR_dB / 10);
-
-sig_power   = 1.0;
-noise_sigma = sqrt(sig_power / SNR_lin);
-int_power   = sig_power / SIR_lin;
-
-% Generate complex baseband signals (unit variance)
-s = (randn(1, N_samples) + 1j * randn(1, N_samples)) / sqrt(2);  % desired
-i = (randn(1, N_samples) + 1j * randn(1, N_samples)) / sqrt(2);  % interferer
-noise = noise_sigma * ...
-        (randn(M, N_samples) + 1j * randn(M, N_samples)) / sqrt(2);
-
-% Received signal matrix X: (M x N_samples)
-%   Each row = one antenna's time series
-%   Each column = one snapshot across all antennas
-X = a_sig * s + sqrt(int_power) * a_int * i + noise;
+env         = signal_setup();
+M           = env.M;
+d_over_lam  = env.d_over_lam;
+theta_sig   = env.theta_sig;
+theta_int   = env.theta_int;
+SNR_dB      = env.SNR_dB;
+SIR_dB      = env.SIR_dB;
+N_samples   = env.N_samples;
+sig_power   = env.sig_power;
+noise_sigma = env.noise_sigma;
+int_power   = env.int_power;
+a_sig       = env.a_sig;
+a_int       = env.a_int;
+X           = env.X;
+s           = env.s;
 
 % -------------------------------------------------------------------------
 % 4. BEAMFORMING WEIGHTS

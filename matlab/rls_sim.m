@@ -28,34 +28,25 @@ fprintf('  PHASE 2.2 — RLS ADAPTIVE BEAMFORMER SIMULATION\n');
 fprintf('=======================================================\n\n');
 
 % -------------------------------------------------------------------------
-% 1. PARAMETERS AND SIGNAL GENERATION
-%    Identical to algo_sim.m and lms_sim.m — same seed, same RNG draw order.
+% 1. SIGNAL ENVIRONMENT
+%    All parameters and generated signals from the canonical signal model.
+%    See signal_setup.m for array geometry, channel conditions, and RNG.
 % -------------------------------------------------------------------------
-M          = 8;
-d_over_lam = 0.5;
-theta_sig  = 30;
-theta_int  = -20;
-SNR_dB     = 10;
-SIR_dB     = 0;
-N_samples  = 512;
-
-rng(42);
-
-SNR_lin     = 10^(SNR_dB / 10);
-SIR_lin     = 10^(SIR_dB / 10);
-sig_power   = 1.0;
-noise_sigma = sqrt(sig_power / SNR_lin);
-int_power   = sig_power / SIR_lin;
-
-a_sig = steeringVector(theta_sig, M, d_over_lam);
-a_int = steeringVector(theta_int, M, d_over_lam);
-
-s     = (randn(1, N_samples) + 1j * randn(1, N_samples)) / sqrt(2);
-i_sig = (randn(1, N_samples) + 1j * randn(1, N_samples)) / sqrt(2);
-noise = noise_sigma * (randn(M, N_samples) + 1j * randn(M, N_samples)) / sqrt(2);
-
-X = a_sig * s + sqrt(int_power) * a_int * i_sig + noise;
-d = s;   % pilot (desired signal)
+env         = signal_setup();
+M           = env.M;
+d_over_lam  = env.d_over_lam;
+theta_sig   = env.theta_sig;
+theta_int   = env.theta_int;
+SNR_dB      = env.SNR_dB;
+SIR_dB      = env.SIR_dB;
+N_samples   = env.N_samples;
+sig_power   = env.sig_power;
+noise_sigma = env.noise_sigma;
+int_power   = env.int_power;
+a_sig       = env.a_sig;
+a_int       = env.a_int;
+X           = env.X;
+d           = env.d;
 
 % -------------------------------------------------------------------------
 % 2. PHASE 1 FIXED-WEIGHT BASELINE
@@ -64,8 +55,15 @@ w_fixed       = a_sig / norm(a_sig);
 sinr_fixed    = compute_sinr(w_fixed, a_sig, a_int, sig_power, int_power, noise_sigma);
 sinr_fixed_dB = 10*log10(sinr_fixed);
 
-% LMS best result (from Phase 2.1) for comparison
-sinr_lms_dB = 18.93;
+% LMS best result — computed from same signal environment (mu=0.001)
+w_lms_ref = zeros(M,1);
+for n_ref = 1:N_samples
+    x_n = X(:,n_ref);
+    e_n = d(n_ref) - w_lms_ref' * x_n;
+    w_lms_ref = w_lms_ref + 0.001 * conj(e_n) * x_n;
+end
+sinr_lms_dB = 10*log10(compute_sinr(w_lms_ref, a_sig, a_int, ...
+                                     sig_power, int_power, noise_sigma));
 
 fprintf('Phase 1 fixed-weight SINR : %.2f dB\n', sinr_fixed_dB);
 fprintf('Phase 2.1 LMS SINR        : %.2f dB\n\n', sinr_lms_dB);
