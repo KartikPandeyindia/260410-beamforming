@@ -12,6 +12,8 @@ vivado/
 *.bit
 *.ltx
 .Xil/
+synthesis/*.jou
+synthesis/*.log
 
 # iverilog simulation
 *.vcd
