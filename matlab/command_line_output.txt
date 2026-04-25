@@ -1,10 +1,11 @@
 =======================================================
-  PHASE 2.1 — LMS ADAPTIVE BEAMFORMER SIMULATION
+  PHASE 2.2 — RLS ADAPTIVE BEAMFORMER SIMULATION
 =======================================================
 
 Phase 1 fixed-weight SINR : 15.78 dB
+Phase 2.1 LMS SINR        : 18.93 dB
 
-Best step size : mu = 0.001
+Best forgetting factor : lambda = 1.000
 
 =======================================================
   RESULTS SUMMARY
@@ -14,14 +15,16 @@ Best step size : mu = 0.001
   SNR: 10 dB  |  SIR: 0 dB
 -------------------------------------------------------
   Phase 1 fixed-weight SINR    : +15.78 dB
-  LMS converged SINR           : +18.93 dB  (mu=0.001)
-  SINR delta (LMS - fixed)     : +3.15 dB
-  Convergence sample (<1dB gap): 15 / 512
+  Phase 2.1 LMS SINR           : +18.93 dB
+  RLS converged SINR           : +18.90 dB  (lambda=1.000)
+  RLS delta vs fixed           : +3.12 dB
+  RLS delta vs LMS             : -0.03 dB
+  Convergence sample (<1dB gap): 2 / 512
 -------------------------------------------------------
-  Step size sweep results:
-    mu = 0.001  ->  converged SINR = 18.93 dB
-    mu = 0.005  ->  converged SINR = 18.93 dB
-    mu = 0.010  ->  converged SINR = 18.92 dB
-    mu = 0.050  ->  converged SINR = 17.48 dB
-    mu = 0.100  ->  converged SINR = -11.97 dB
+  Forgetting factor sweep results:
+    lambda = 0.900  ->  converged SINR = 17.17 dB
+    lambda = 0.950  ->  converged SINR = 18.26 dB
+    lambda = 0.990  ->  converged SINR = 18.80 dB
+    lambda = 0.999  ->  converged SINR = 18.90 dB
+    lambda = 1.000  ->  converged SINR = 18.90 dB
 =======================================================
